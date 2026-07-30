@@ -1,0 +1,29 @@
+# Abuse AI — cron (alternative to supervisor-scheduler.conf)
+# ===========================================================
+#
+# YOU ONLY NEED ONE OR THE OTHER:
+#   - supervisor-scheduler.conf runs `schedule:run` in a loop.
+#   - OR this cron entry runs it once per minute.
+#
+# If you're already using supervisor-scheduler.conf (recommended — see
+# `supervisorctl status abuseai-scheduler`), you do NOT need this file.
+#
+# Install (as the abuseai user):
+#   crontab -u abuseai -e
+# Paste the line below into the crontab editor.
+
+* * * * * /usr/bin/php /var/www/abuseai/artisan schedule:run >> /dev/null 2>&1
+
+# ============================================================
+# The scheduler dispatches these commands automatically:
+# ============================================================
+#  Every 5 min:   php artisan abuse:poll-mailbox         (IMAP email polling)
+#  Every 15 min:  php artisan abuse:poll-feeds            (AbuseIPDB API feed)
+#  Every 6 hours: php artisan abuse:check-abuseipdb       (IP inventory scan against AbuseIPDB)
+#  Twice daily:   php artisan abuse:check-dnsbl --all     (DNSBL blacklist check)
+
+# ============================================================
+# Horizon snapshot (optional — only if using Horizon)
+# Captures queue metrics for the /horizon dashboard graphs.
+# ============================================================
+# * * * * * /usr/bin/php /var/www/abuseai/artisan horizon:snapshot >> /dev/null 2>&1

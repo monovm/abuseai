@@ -1,0 +1,64 @@
+# Abuse AI — nginx vhost example
+# ===============================
+#
+# This is the SAFE deployment shape: docroot points at public/. With
+# this layout, .env, composer.lock, app/, config/, etc. are physically
+# above the docroot and cannot be served regardless of bugs.
+#
+# If you can't move the docroot (some shared hosting), use the bundled
+# .htaccess at the project root instead — it has explicit deny rules
+# for the same files.
+#
+# Replace abuseai.example.com and the paths to taste.
+
+server {
+    listen 80;
+    server_name abuseai.example.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name abuseai.example.com;
+
+    # Docroot points at public/ — never the project root.
+    root /var/www/abuseai/public;
+    index index.php;
+
+    ssl_certificate     /etc/letsencrypt/live/abuseai.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/abuseai.example.com/privkey.pem;
+
+    # Security headers
+    add_header X-Frame-Options          "SAMEORIGIN" always;
+    add_header X-Content-Type-Options   "nosniff"    always;
+    add_header Referrer-Policy          "strict-origin-when-cross-origin" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    # Tighten CSP once you know which third parties (recaptcha, sentry,
+    # mandrill tracking) you actually call from the browser.
+    # add_header Content-Security-Policy "default-src 'self'; ..." always;
+
+    # Defense-in-depth: even if a misconfiguration lets a request escape
+    # public/, these patterns are denied across the entire host.
+    location ~ /\.(?!well-known) { deny all; }
+    location ~ ^/\.env           { deny all; }
+    location ~ \.(env|sql|sqlite|sqlite3|md|lock|conf|ini|sh|bak|swp|log)$ { deny all; }
+    location = /composer.json    { deny all; }
+    location = /package.json     { deny all; }
+    location = /phpunit.xml      { deny all; }
+
+    # Reasonable upload limit. The public abuse form accepts up to 5
+    # files at 10MB each — bump to 64m if you need headroom.
+    client_max_body_size 64m;
+
+    # Standard Laravel rewrite
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location ~ \.php$ {
+        fastcgi_pass   unix:/run/php/php8.3-fpm.sock;
+        fastcgi_index  index.php;
+        fastcgi_param  SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+        include        fastcgi_params;
+    }
+}

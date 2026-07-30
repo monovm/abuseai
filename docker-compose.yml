@@ -1,0 +1,89 @@
+# =====================================================================
+# Abuse AI — full self-hosted stack.
+#
+# Quick start:
+#   cp .env.docker.example .env
+#   docker compose up -d
+#
+# Then open http://localhost:8000  (set AUTO_SEED=true for a demo login).
+# =====================================================================
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: monovmcom/abuseai.io:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      CONTAINER_ROLE: app
+    ports:
+      - "${APP_PORT:-8000}:80"
+    volumes:
+      - storage:/app/storage
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  horizon:
+    image: monovmcom/abuseai.io:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      CONTAINER_ROLE: horizon
+    command: ["php", "artisan", "horizon"]
+    volumes:
+      - storage:/app/storage
+    depends_on:
+      app:
+        condition: service_started
+      redis:
+        condition: service_healthy
+
+  scheduler:
+    image: monovmcom/abuseai.io:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      CONTAINER_ROLE: scheduler
+    command: ["php", "artisan", "schedule:work"]
+    volumes:
+      - storage:/app/storage
+    depends_on:
+      app:
+        condition: service_started
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-abuseai}
+      POSTGRES_USER: ${DB_USERNAME:-abuseai}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-abuseai}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-abuseai} -d ${DB_DATABASE:-abuseai}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  pgdata:
+  redisdata:
+  storage:

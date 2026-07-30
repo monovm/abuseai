@@ -1,0 +1,85 @@
+{
+  "$schema": "https://raw.githubusercontent.com/heroku/heroku-app-json-schema/main/app.schema.json",
+  "name": "Abuse AI",
+  "description": "AI-powered abuse management platform for hosting companies and ISPs.",
+  "repository": "https://github.com/monovm/abuseai",
+  "website": "https://github.com/monovm/abuseai",
+  "logo": "https://raw.githubusercontent.com/monovm/abuseai/main/web-app-manifest-192x192.png",
+  "keywords": ["abuse", "abuse-desk", "hosting", "isp", "laravel", "php", "ai", "security"],
+  "stack": "container",
+  "formation": {
+    "web": { "quantity": 1, "size": "basic" },
+    "worker": { "quantity": 1, "size": "basic" }
+  },
+  "addons": [
+    { "plan": "heroku-postgresql" },
+    { "plan": "heroku-key-value-store" }
+  ],
+  "scripts": {
+    "postdeploy": "php artisan db:seed --force --no-interaction"
+  },
+  "env": {
+    "APP_KEY": {
+      "description": "Laravel encryption key. Generate one with: php -r \"echo 'base64:'.base64_encode(random_bytes(32));\" — it must be set explicitly, because a dyno's filesystem is wiped on every restart and a regenerated key would make existing sessions and encrypted columns unreadable.",
+      "required": true
+    },
+    "SEED_ADMIN_PASSWORD": {
+      "description": "Password for the seeded admin@abuseai.io account. Leave blank to get a random one printed in the deploy log (heroku logs --tail), then change it after your first login either way.",
+      "required": false
+    },
+    "APP_URL": {
+      "description": "Your app's public URL, e.g. https://your-app.herokuapp.com. Heroku only assigns it once the app exists, so set it after the first deploy — queued jobs and outgoing email need it to build absolute links.",
+      "required": false
+    },
+    "APP_NAME": { "value": "Abuse AI" },
+    "APP_ENV": { "value": "production" },
+    "APP_DEBUG": { "value": "false" },
+    "LOG_CHANNEL": { "value": "stack" },
+    "LOG_LEVEL": { "value": "warning" },
+
+    "DB_CONNECTION": { "value": "pgsql" },
+
+    "REDIS_CLIENT": { "value": "phpredis" },
+    "REDIS_TLS_INSECURE": { "value": "true" },
+    "QUEUE_CONNECTION": { "value": "redis" },
+    "CACHE_STORE": { "value": "redis" },
+
+    "SESSION_DRIVER": { "value": "database" },
+    "SESSION_ENCRYPT": { "value": "true" },
+    "SESSION_SECURE_COOKIE": { "value": "true" },
+    "TRUSTED_PROXIES": { "value": "*" },
+
+    "AUTO_MIGRATE": { "value": "false" },
+    "AUTO_SEED": { "value": "false" },
+
+    "XDG_DATA_HOME": { "value": "/tmp" },
+    "XDG_CONFIG_HOME": { "value": "/tmp" },
+
+    "AI_PROVIDER": { "value": "claude" },
+    "CLAUDE_MODEL": { "value": "claude-sonnet-5" },
+    "ANTHROPIC_API_KEY": {
+      "description": "Anthropic API key for AI triage. Optional — add it later from the dashboard if you want to evaluate the UI first.",
+      "required": false
+    },
+    "OPENAI_API_KEY": {
+      "description": "OpenAI API key, used when AI_PROVIDER=openai.",
+      "required": false
+    },
+    "MANDRILL_KEY": {
+      "description": "Mandrill API key for outbound abuse notices.",
+      "required": false
+    },
+    "ABUSEIPDB_KEY": {
+      "description": "AbuseIPDB key for IP reputation enrichment.",
+      "required": false
+    },
+    "VIRUSTOTAL_KEY": {
+      "description": "VirusTotal key for URL/file enrichment.",
+      "required": false
+    },
+    "SHODAN_KEY": {
+      "description": "Shodan key for exposed-service enrichment.",
+      "required": false
+    }
+  }
+}

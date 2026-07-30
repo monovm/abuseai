@@ -1,0 +1,25 @@
+# Heroku container-stack manifest — https://devcenter.heroku.com/articles/build-docker-images-heroku-yml
+#
+# Reuses the project Dockerfile, so a Heroku deploy runs the exact same
+# image as Docker Compose, Render and DigitalOcean. Paired with app.json
+# (`"stack": "container"`), this powers the "Deploy to Heroku" button.
+#
+# Migrations run in the release phase rather than from the container
+# entrypoint (AUTO_MIGRATE=false in app.json): web and worker dynos boot in
+# parallel, and two concurrent `migrate --force` runs can collide.
+
+build:
+  docker:
+    web: Dockerfile
+    worker: Dockerfile
+
+release:
+  image: web
+  command:
+    - php artisan migrate --force --no-interaction
+
+run:
+  # The image's ENTRYPOINT still runs (Heroku honours it), so these commands
+  # arrive as its arguments exactly as they do under Docker Compose.
+  web: frankenphp run --config /etc/frankenphp/Caddyfile
+  worker: sh -c "php artisan schedule:work & exec php artisan horizon"
