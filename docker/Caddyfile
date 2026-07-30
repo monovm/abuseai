@@ -1,0 +1,16 @@
+{
+	frankenphp
+	order php_server before file_server
+}
+
+{$SERVER_NAME} {
+	root /app/public
+	encode zstd br gzip
+
+	# Cache the Vite-built asset bundle aggressively — filenames are hashed.
+	@built path /build/*
+	header @built Cache-Control "public, max-age=31536000, immutable"
+
+	# Laravel front controller (handles routing + static files under public/).
+	php_server
+}

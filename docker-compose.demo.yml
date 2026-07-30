@@ -1,0 +1,17 @@
+# =====================================================================
+# Demo overlay — seeds the database so you can log in immediately.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d
+#
+# Seeded admin login (throwaway demo only — never expose this host):
+#   admin@abuseai.io / abuseai-demo
+#
+# Without this overlay the database is NOT seeded and the admin account
+# gets a strong random password (printed once to `docker compose logs`).
+# =====================================================================
+
+services:
+  app:
+    environment:
+      AUTO_SEED: "true"
+      SEED_ADMIN_PASSWORD: "abuseai-demo"

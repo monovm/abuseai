@@ -1,0 +1,20 @@
+* text=auto eol=lf
+
+*.blade.php diff=html
+*.css diff=css
+*.html diff=html
+*.md diff=markdown
+*.php diff=php
+
+# Files excluded from `composer archive` / GitHub release tarballs.
+# Keeps the published artifact lean — dev-only tooling, tests, and
+# CI metadata don't ship with the project.
+/.github         export-ignore
+/tests           export-ignore
+/marketing       export-ignore
+.editorconfig    export-ignore
+.gitattributes   export-ignore
+.gitignore       export-ignore
+CHANGELOG.md     export-ignore
+CLAUDE.md        export-ignore
+phpunit.xml      export-ignore

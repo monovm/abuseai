@@ -1,0 +1,120 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+#
+# Powers the "Deploy to Render" button: provisions the web app, a queue
+# worker (Horizon + scheduler), PostgreSQL, and Redis in one click.
+#
+# During deploy Render prompts for the `sync: false` values below —
+# at minimum APP_KEY and APP_URL. Generate an APP_KEY with:
+#   php -r "echo 'base64:'.base64_encode(random_bytes(32));"
+#
+# Note: the free Postgres/Redis plans are fine for evaluation; the web
+# and worker services require a paid instance plan.
+
+services:
+  - type: redis
+    name: abuseai-redis
+    plan: free
+    ipAllowList: []          # internal connections only
+    maxmemoryPolicy: noeviction   # never evict queued jobs
+
+  - type: web
+    name: abuseai
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    healthCheckPath: /up
+    envVars:
+      - fromGroup: abuseai-config
+      - key: CONTAINER_ROLE
+        value: app
+      - key: APP_URL
+        sync: false
+      - key: DB_URL
+        fromDatabase:
+          name: abuseai-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: abuseai-redis
+          property: connectionString
+
+  - type: worker
+    name: abuseai-worker
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    dockerCommand: sh -c "php artisan schedule:work & exec php artisan horizon"
+    envVars:
+      - fromGroup: abuseai-config
+      - key: CONTAINER_ROLE
+        value: horizon
+      - key: DB_URL
+        fromDatabase:
+          name: abuseai-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: abuseai-redis
+          property: connectionString
+
+databases:
+  - name: abuseai-db
+    databaseName: abuseai
+    user: abuseai
+    plan: free
+    postgresMajorVersion: "16"
+
+envVarGroups:
+  - name: abuseai-config
+    envVars:
+      # Application secret. Generate locally and paste when prompted.
+      - key: APP_KEY
+        sync: false
+      - key: APP_NAME
+        value: "Abuse AI"
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: "false"
+      - key: LOG_CHANNEL
+        value: stack
+      - key: LOG_LEVEL
+        value: warning
+      # Database — DB_URL (per service) supplies host/credentials.
+      - key: DB_CONNECTION
+        value: pgsql
+      # Redis — REDIS_URL (per service) supplies host/credentials.
+      - key: REDIS_CLIENT
+        value: phpredis
+      - key: QUEUE_CONNECTION
+        value: redis
+      - key: CACHE_STORE
+        value: redis
+      - key: SESSION_DRIVER
+        value: database
+      - key: SESSION_ENCRYPT
+        value: "true"
+      - key: SESSION_SECURE_COOKIE
+        value: "true"
+      # Render terminates TLS at its edge and proxies to the service.
+      - key: TRUSTED_PROXIES
+        value: "*"
+      # AI + integrations — paste keys when prompted (or add later).
+      - key: AI_PROVIDER
+        value: claude
+      - key: CLAUDE_MODEL
+        value: claude-sonnet-5
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: MANDRILL_KEY
+        sync: false
+      - key: ABUSEIPDB_KEY
+        sync: false
+      - key: VIRUSTOTAL_KEY
+        sync: false
+      - key: SHODAN_KEY
+        sync: false

@@ -1,0 +1,160 @@
+# DigitalOcean App Platform template — powers the "Deploy to DigitalOcean"
+# button. https://docs.digitalocean.com/products/app-platform/how-to/add-deploy-do-button/
+#
+# Builds both components from the project Dockerfile, so App Platform runs the
+# same image as Docker Compose, Render and Heroku.
+#
+# One prerequisite the button cannot cover: App Platform's *dev* databases are
+# PostgreSQL-only, and the Deploy button supports nothing else. Horizon and the
+# ingestion de-duplicator both talk to Redis directly, so REDIS_URL has to point
+# at something real — create a managed Valkey database first (Databases → Create
+# → Valkey) and paste its connection string when the button prompts for it.
+# See docs/docker.md for the walkthrough.
+
+spec:
+  name: abuseai
+  region: nyc
+
+  services:
+    - name: web
+      git:
+        repo_clone_url: https://github.com/monovm/abuseai.git
+        branch: main
+      dockerfile_path: Dockerfile
+      instance_size_slug: basic-xs
+      instance_count: 1
+      http_port: 8080
+      health_check:
+        http_path: /up
+        initial_delay_seconds: 60
+      envs:
+        - key: CONTAINER_ROLE
+          value: app
+        # The web component owns schema setup; the worker below skips it so the
+        # two cannot run migrations against each other on a parallel deploy.
+        - key: AUTO_MIGRATE
+          value: "true"
+        # Seeders are idempotent (roles, reference data, admin account), so
+        # re-running them on every deploy is safe.
+        - key: AUTO_SEED
+          value: "true"
+
+  # run_command overrides the image's CMD and leaves the ENTRYPOINT in place,
+  # exactly as `command:` does under Docker Compose.
+  workers:
+    - name: worker
+      git:
+        repo_clone_url: https://github.com/monovm/abuseai.git
+        branch: main
+      dockerfile_path: Dockerfile
+      instance_size_slug: basic-xs
+      instance_count: 1
+      run_command: sh -c "php artisan schedule:work & exec php artisan horizon"
+      envs:
+        - key: CONTAINER_ROLE
+          value: horizon
+        - key: AUTO_MIGRATE
+          value: "false"
+        - key: AUTO_SEED
+          value: "false"
+
+  databases:
+    - name: db
+      engine: PG
+      version: "16"
+      production: false
+
+  envs:
+    # --- Supplied at deploy time -------------------------------------------
+    - key: APP_KEY
+      scope: RUN_TIME
+      type: SECRET
+      value: ""
+      # Generate with:
+      #   php -r "echo 'base64:'.base64_encode(random_bytes(32));"
+      # Must be set explicitly: containers have an ephemeral filesystem, and a
+      # key regenerated on restart makes sessions and encrypted columns
+      # unreadable.
+    - key: REDIS_URL
+      scope: RUN_TIME
+      type: SECRET
+      value: ""
+      # rediss://default:PASSWORD@host:25061 from your managed Valkey database.
+    - key: SEED_ADMIN_PASSWORD
+      scope: RUN_TIME
+      type: SECRET
+      value: ""
+      # Leave blank for a random admin password printed in the web component's
+      # runtime logs. Change it after the first login either way.
+
+    # --- Wired from the provisioned database -------------------------------
+    - key: DB_CONNECTION
+      value: pgsql
+    - key: DB_URL
+      value: ${db.DATABASE_URL}
+
+    # --- Application -------------------------------------------------------
+    - key: APP_NAME
+      value: Abuse AI
+    - key: APP_ENV
+      value: production
+    - key: APP_DEBUG
+      value: "false"
+    - key: APP_URL
+      value: ${APP_URL}
+    - key: LOG_CHANNEL
+      value: stack
+    - key: LOG_LEVEL
+      value: warning
+
+    - key: REDIS_CLIENT
+      value: phpredis
+    # Managed Valkey presents a certificate App Platform's PHP image does not
+    # have in its trust store; traffic stays encrypted, only the peer check is
+    # skipped. Drop this if you supply a CA-verifiable Redis endpoint.
+    - key: REDIS_TLS_INSECURE
+      value: "true"
+    - key: QUEUE_CONNECTION
+      value: redis
+    - key: CACHE_STORE
+      value: redis
+
+    - key: SESSION_DRIVER
+      value: database
+    - key: SESSION_ENCRYPT
+      value: "true"
+    - key: SESSION_SECURE_COOKIE
+      value: "true"
+    # App Platform terminates TLS at its edge and proxies to the component.
+    - key: TRUSTED_PROXIES
+      value: "*"
+
+    # --- AI + threat intel (all optional; add later from the dashboard) -----
+    - key: AI_PROVIDER
+      value: claude
+    - key: CLAUDE_MODEL
+      value: claude-sonnet-5
+    - key: ANTHROPIC_API_KEY
+      scope: RUN_TIME
+      type: SECRET
+      value: ""
+    - key: OPENAI_API_KEY
+      scope: RUN_TIME
+      type: SECRET
+      value: ""
+    - key: MANDRILL_KEY
+      scope: RUN_TIME
+      type: SECRET
+      value: ""
+    - key: ABUSEIPDB_KEY
+      scope: RUN_TIME
+      type: SECRET
+      value: ""
+    - key: VIRUSTOTAL_KEY
+      scope: RUN_TIME
+      type: SECRET
+      value: ""
+    - key: SHODAN_KEY
+      scope: RUN_TIME
+      type: SECRET
+      value: ""

@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Pest is a hard gate. Pint still runs informationally because there's
+# pre-existing style debt across ~110 files; flip `continue-on-error`
+# to false once `vendor/bin/pint` has been run + committed once.
+jobs:
+  test:
+    name: Test (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ["8.4"]
+
+    env:
+      DB_CONNECTION: sqlite
+      DB_DATABASE: ":memory:"
+      APP_KEY: base64:RgPFrMC9DhPi3OCv4hBl8djxfTo7UY8UMgoBaYWxQK4=
+      APP_ENV: testing
+      QUEUE_CONNECTION: sync
+      CACHE_STORE: array
+      SESSION_DRIVER: array
+      MAIL_MAILER: array
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mbstring, dom, fileinfo, pdo_sqlite, redis, intl, bcmath
+          coverage: none
+          tools: composer:v2
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Cache Composer
+        uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache/files
+          key: composer-${{ matrix.php }}-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-${{ matrix.php }}-
+
+      - name: Prepare .env
+        # phpdotenv emits a notice when .env is missing, which PHPUnit
+        # then flags as a "risky" test. Copy the example file so the
+        # boot path is silent.
+        run: cp .env.example .env
+
+      - name: Install Composer dependencies
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: Install npm dependencies and build Vite assets
+        # Several feature tests render Blade layouts that include
+        # `@vite(...)`. Without `npm run build` they all fail with
+        # "Vite manifest not found".
+        run: |
+          npm ci
+          npm run build
+
+      - name: Run Pint (lint)
+        continue-on-error: true
+        run: vendor/bin/pint --test
+
+      - name: Run Pest
+        run: vendor/bin/pest --colors=always
+
+  audit:
+    name: Composer audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          tools: composer:v2
+
+      - name: composer audit
+        run: composer audit --locked --no-dev --abandoned=ignore

@@ -1,0 +1,54 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # ---------------------------------------------------------------
+    # Block direct access to sensitive files at the project root.
+    # This .htaccess is used in shared-hosting layouts where the
+    # webserver docroot is the project root (not public/). Without
+    # these denies, a request like https://host/.env would be served
+    # as plaintext because the rewrite-to-Laravel below only kicks in
+    # for files that DON'T exist on disk.
+    #
+    # If you can change the webserver docroot, point it at public/
+    # instead and delete this file entirely — that's the safer setup.
+    # ---------------------------------------------------------------
+    RewriteRule (^|/)\.(?!well-known)         - [F,L]
+    RewriteRule ^(\.env|\.env\..*)$           - [F,L]
+    RewriteRule ^(composer\.(json|lock))$     - [F,L]
+    RewriteRule ^(package(-lock)?\.json)$     - [F,L]
+    RewriteRule ^(artisan|phpunit\.xml.*)$    - [F,L]
+    RewriteRule ^(README\.md|CLAUDE\.md|SECURITY\.md|LICENSE)$ - [F,L]
+    RewriteRule ^(storage|bootstrap/cache|tests|deploy|docs|config|database|app|routes|resources)(/|$) - [F,L]
+
+    # Serve real files from public/ (CSS, JS, images, Vite build assets)
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^(build/.*)$ public/$1 [L]
+    RewriteRule ^(favicon\.ico|robots\.txt)$ public/$1 [L]
+
+    # Serve any other asset that exists under public/ (logo, icons, the
+    # webmanifest, …) so a single root-relative path — e.g. /abuseai-logo.webp
+    # — resolves whether the docroot is the project root or public/.
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{DOCUMENT_ROOT}/public%{REQUEST_URI} -f
+    RewriteRule ^ public%{REQUEST_URI} [L]
+
+    # Send all other requests to root index.php (Laravel proxy)
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^ index.php [L]
+</IfModule>
+
+<IfModule !mod_rewrite.c>
+    # Fallback for servers without mod_rewrite — at least block dotfiles.
+    <FilesMatch "^\.">
+        Require all denied
+    </FilesMatch>
+</IfModule>
+
+# Belt-and-braces: deny by filename even if the rewrites above are
+# bypassed (e.g. the operator disables RewriteEngine to debug).
+<FilesMatch "^\.env|^\.git|composer\.(json|lock)|package(-lock)?\.json|^phpunit\.xml|^CLAUDE\.md$">
+    Require all denied
+</FilesMatch>
