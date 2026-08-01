@@ -6,6 +6,7 @@ Receives, triages, scores, and actions abuse reports with AI at every key
 step. Built with Laravel 13 and Livewire, served by FrankenPHP (PHP 8.4),
 powered by Claude or OpenAI.
 
+- **Website:** https://abuseai.io
 - **Source & full documentation:** https://github.com/monovm/abuseai
 - **Docker guide:** https://github.com/monovm/abuseai/blob/main/docs/docker.md
 - **Issue tracker:** https://github.com/monovm/abuseai/issues
