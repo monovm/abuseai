@@ -74,7 +74,7 @@ jobs:
 
       - name: Derive image labels
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.DOCKERHUB_IMAGE }}
 
@@ -128,7 +128,7 @@ jobs:
 
       - name: Derive Docker Hub tags
         id: hub
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.DOCKERHUB_IMAGE }}
           tags: |
@@ -183,7 +183,7 @@ jobs:
 
       - name: Derive Docker Hub tags
         id: hub
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.DOCKERHUB_IMAGE }}
           tags: |
@@ -194,7 +194,7 @@ jobs:
 
       - name: Derive GHCR tags
         id: ghcr
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.GHCR_IMAGE }}
           tags: |
