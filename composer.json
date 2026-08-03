@@ -29,7 +29,7 @@
         "openai-php/laravel": "^0.19.1",
         "smalot/pdfparser": "^2.12",
         "spatie/laravel-activitylog": "^5.0",
-        "spatie/laravel-permission": "^7.2"
+        "spatie/laravel-permission": "^8.3"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",
