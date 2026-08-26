@@ -286,6 +286,35 @@ The scheduler runs these commands automatically:
 | `abuse:check-dnsbl` | Every 12 hours | Check IPs against DNS blacklists |
 | `abuse:check-abuseipdb` | Periodic | Update AbuseIPDB scores for inventory IPs |
 | `abuse:scan-reputation` | Periodic | Aggregate reputation scores from all sources |
+| `abuse:prune-emails` | Daily at 03:30 | Delete raw email archives past the retention window |
+
+### Storage retention
+
+Every ingested email is written verbatim to `storage/app/private/emails/Y/m/*.eml`, and
+binary attachments pulled out of it land in `storage/app/private/evidence/Y/m/`. Nothing
+deleted them before `abuse:prune-emails` existed, so on a busy mailbox the archive grows
+into the tens of gigabytes.
+
+`abuse:prune-emails` deletes archives older than `EMAIL_ARCHIVE_RETENTION_DAYS` (default
+`90`). Files attached to a report on a live case — `open`, `investigating`, or `actioned` —
+are kept regardless of age.
+
+```bash
+# See what would go, and how much space it frees
+php artisan abuse:prune-emails --days=90 --dry-run
+
+# Apply it
+php artisan abuse:prune-emails --days=90
+
+# Include extracted binary attachments (PDFs, screenshots) too
+php artisan abuse:prune-emails --days=90 --include-evidence
+```
+
+Pruned files stay listed in `abuse_reports.attachment_paths`. That is harmless by design:
+the download route returns 404 for a missing file and the AI text extractor skips it, so a
+stale entry degrades rather than breaks. What you do lose is the raw evidence for those
+reports — re-triage and evidence analysis fall back to the email body alone. Pick a
+retention window that outlives your dispute and legal-hold obligations.
 
 ---
 

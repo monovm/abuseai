@@ -24,6 +24,13 @@ return [
         'recurrence_increment' => 0.25,
     ],
 
+    'retention' => [
+        // Raw .eml archives (emails/Y/m) and extracted attachments
+        // (evidence/Y/m) are written at intake and never re-read once a
+        // case is closed. abuse:prune-emails deletes them past this age.
+        'email_archive_days' => (int) env('EMAIL_ARCHIVE_RETENTION_DAYS', 90),
+    ],
+
     'sla' => [
         'critical' => 1,   // hours
         'high' => 4,
