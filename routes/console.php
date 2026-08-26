@@ -28,3 +28,11 @@ Schedule::command('abuse:scan-reputation --stale=6 --create-cases --limit=500')
     ->everySixHours()
     ->withoutOverlapping()
     ->runInBackground();
+
+// Prune aged-out raw email archives (emails/Y/m/*.eml) nightly. Without this
+// the intake archive grows without bound — it reached 40GB before the command
+// existed. Files attached to live cases are kept regardless of age.
+Schedule::command('abuse:prune-emails')
+    ->dailyAt('03:30')
+    ->withoutOverlapping()
+    ->runInBackground();
