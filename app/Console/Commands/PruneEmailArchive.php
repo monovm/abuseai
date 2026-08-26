@@ -7,6 +7,7 @@ use App\Models\AbuseReport;
 use App\Models\CaseAction;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Filesystem\Filesystem;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 
@@ -38,6 +39,9 @@ class PruneEmailArchive extends Command
         {--dry-run : Report what would be deleted without deleting anything}';
 
     protected $description = 'Prune aged-out raw email archives to reclaim storage';
+
+    /** Rows per id page. Small enough that the id filesort stays well inside sort_buffer_size. */
+    private const BATCH_SIZE = 500;
 
     /** Case states that still get worked on — their evidence is never auto-pruned. */
     private const LIVE_CASE_STATUSES = [
@@ -192,8 +196,6 @@ class PruneEmailArchive extends Command
      *  - abuse_reports.metadata.followups[] one .eml per reporter follow-up
      *  - case_actions.payload.attachment    one .eml per reply threaded onto a case
      *
-     * Chunked so a large archive doesn't pull whole tables into memory.
-     *
      * @return array<string, true>
      */
     private function protectedPaths(): array
@@ -201,37 +203,73 @@ class PruneEmailArchive extends Command
         $paths = [];
         $live = array_map(fn (CaseStatus $s) => $s->value, self::LIVE_CASE_STATUSES);
 
-        AbuseReport::query()
-            ->whereHas('case', fn ($q) => $q->whereIn('status', $live))
-            ->where(fn ($q) => $q->whereNotNull('attachment_paths')->orWhereNotNull('metadata'))
-            ->select(['id', 'attachment_paths', 'metadata'])
-            ->chunkById(1000, function ($reports) use (&$paths) {
-                foreach ($reports as $report) {
-                    foreach (($report->attachment_paths ?? []) as $path) {
-                        $this->rememberPath($paths, $path);
-                    }
+        $this->eachHydratedBatch(
+            AbuseReport::query()
+                ->whereHas('case', fn ($q) => $q->whereIn('status', $live))
+                ->where(fn ($q) => $q->whereNotNull('attachment_paths')->orWhereNotNull('metadata')),
+            AbuseReport::query(),
+            ['id', 'attachment_paths', 'metadata'],
+            function ($report) use (&$paths) {
+                foreach (($report->attachment_paths ?? []) as $path) {
+                    $this->rememberPath($paths, $path);
+                }
 
-                    $followups = $report->metadata['followups'] ?? [];
-                    if (is_array($followups)) {
-                        foreach ($followups as $followup) {
-                            $this->rememberPath($paths, is_array($followup) ? ($followup['attachment'] ?? null) : null);
-                        }
+                $followups = $report->metadata['followups'] ?? [];
+                if (is_array($followups)) {
+                    foreach ($followups as $followup) {
+                        $this->rememberPath($paths, is_array($followup) ? ($followup['attachment'] ?? null) : null);
                     }
                 }
-            });
+            },
+        );
 
-        CaseAction::query()
-            ->whereHas('abuseCase', fn ($q) => $q->whereIn('status', $live))
-            ->whereNotNull('payload')
-            ->select(['id', 'payload'])
-            ->chunkById(1000, function ($actions) use (&$paths) {
-                foreach ($actions as $action) {
-                    $payload = $action->payload;
-                    $this->rememberPath($paths, is_array($payload) ? ($payload['attachment'] ?? null) : null);
-                }
-            });
+        $this->eachHydratedBatch(
+            CaseAction::query()
+                ->whereHas('abuseCase', fn ($q) => $q->whereIn('status', $live))
+                ->whereNotNull('payload'),
+            CaseAction::query(),
+            ['id', 'payload'],
+            function ($action) use (&$paths) {
+                $payload = $action->payload;
+                $this->rememberPath($paths, is_array($payload) ? ($payload['attachment'] ?? null) : null);
+            },
+        );
 
         return $paths;
+    }
+
+    /**
+     * Page through $keyQuery selecting ids only, then hydrate each page by
+     * primary key and hand every row to $handle.
+     *
+     * The two-step exists because chunkById() appends ORDER BY id, and
+     * MySQL's filesort buffers every *selected* column, not just the sort
+     * key. These tables carry multi-KB JSON — one report's metadata holds
+     * up to 4KB per reporter follow-up — so selecting them alongside the
+     * ORDER BY overruns sort_buffer_size and the query dies with
+     * "1038 Out of sort memory". Sorting ids alone keeps the sort rows
+     * tiny, and the hydrating lookup is an unordered primary-key IN(),
+     * which never sorts at all.
+     *
+     * @param  array<int, string>  $columns
+     */
+    private function eachHydratedBatch(
+        Builder $keyQuery,
+        Builder $hydrateQuery,
+        array $columns,
+        callable $handle,
+    ): void {
+        $keyQuery->select('id')->chunkById(self::BATCH_SIZE, function ($rows) use ($hydrateQuery, $columns, $handle) {
+            $ids = $rows->pluck('id')->all();
+
+            if ($ids === []) {
+                return;
+            }
+
+            foreach ((clone $hydrateQuery)->whereIn('id', $ids)->get($columns) as $model) {
+                $handle($model);
+            }
+        });
     }
 
     /** Record a path in the protected set when it is a usable string. */
