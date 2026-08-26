@@ -1,8 +1,10 @@
 <?php
 
+use App\Enums\ActionType;
 use App\Enums\CaseStatus;
 use App\Models\AbuseCase;
 use App\Models\AbuseReport;
+use App\Models\CaseAction;
 use Illuminate\Support\Facades\Storage;
 
 beforeEach(function () {
@@ -104,4 +106,72 @@ it('refuses a zero-day retention window', function () {
         ->assertFailed();
 
     Storage::disk('local')->assertExists($this->oldMonth.'/old.eml');
+});
+
+it('keeps a reply .eml threaded onto a live case as a case action', function () {
+    $path = $this->oldMonth.'/reply.eml';
+    Storage::disk('local')->put($path, 'raw reply');
+
+    $case = AbuseCase::factory()->create(['status' => CaseStatus::Open]);
+    CaseAction::create([
+        'case_id' => $case->id,
+        'action_type' => ActionType::NoteAdded,
+        'payload' => ['type' => 'email_reply', 'attachment' => $path],
+        'note' => 'Email reply from reporter',
+        'created_at' => now(),
+    ]);
+
+    $this->artisan('abuse:prune-emails', ['--days' => 30])
+        ->assertSuccessful();
+
+    Storage::disk('local')->assertExists($path);
+});
+
+it('prunes a reply .eml once its case is closed', function () {
+    $path = $this->oldMonth.'/reply.eml';
+    Storage::disk('local')->put($path, 'raw reply');
+
+    $case = AbuseCase::factory()->create(['status' => CaseStatus::Closed]);
+    CaseAction::create([
+        'case_id' => $case->id,
+        'action_type' => ActionType::NoteAdded,
+        'payload' => ['type' => 'email_reply', 'attachment' => $path],
+        'note' => 'Email reply from reporter',
+        'created_at' => now(),
+    ]);
+
+    $this->artisan('abuse:prune-emails', ['--days' => 30])
+        ->assertSuccessful();
+
+    Storage::disk('local')->assertMissing($path);
+});
+
+it('keeps a reporter follow-up .eml recorded in report metadata', function () {
+    $path = $this->oldMonth.'/followup.eml';
+    Storage::disk('local')->put($path, 'raw follow-up');
+
+    $case = AbuseCase::factory()->create(['status' => CaseStatus::Investigating]);
+    AbuseReport::factory()->create([
+        'case_id' => $case->id,
+        'attachment_paths' => null,
+        'metadata' => ['followups' => [['from' => 'x@y.z', 'attachment' => $path]]],
+    ]);
+
+    $this->artisan('abuse:prune-emails', ['--days' => 30])
+        ->assertSuccessful();
+
+    Storage::disk('local')->assertExists($path);
+});
+
+it('never touches files outside the archive prefixes', function () {
+    Storage::disk('local')->put('ai_provider_settings.json', '{}');
+    Storage::disk('local')->put('email_transport_settings.json', '{}');
+    Storage::disk('local')->put('imports/2020/01/import.log', 'old import log');
+
+    $this->artisan('abuse:prune-emails', ['--days' => 30, '--include-evidence' => true])
+        ->assertSuccessful();
+
+    Storage::disk('local')->assertExists('ai_provider_settings.json');
+    Storage::disk('local')->assertExists('email_transport_settings.json');
+    Storage::disk('local')->assertExists('imports/2020/01/import.log');
 });

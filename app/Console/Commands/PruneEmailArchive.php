@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Enums\CaseStatus;
 use App\Models\AbuseReport;
+use App\Models\CaseAction;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Support\Carbon;
@@ -183,34 +184,62 @@ class PruneEmailArchive extends Command
     }
 
     /**
-     * Every attachment path belonging to a report on a live case, as a
-     * lookup keyed by path. Chunked so a large archive doesn't pull the
-     * whole reports table into memory.
+     * Every archive path still referenced by a live case, as a lookup keyed
+     * by path. Three tables point at .eml files and all three must be
+     * consulted — a path missing from this set gets deleted on age alone:
+     *
+     *  - abuse_reports.attachment_paths     the intake .eml + extracted evidence
+     *  - abuse_reports.metadata.followups[] one .eml per reporter follow-up
+     *  - case_actions.payload.attachment    one .eml per reply threaded onto a case
+     *
+     * Chunked so a large archive doesn't pull whole tables into memory.
      *
      * @return array<string, true>
      */
     private function protectedPaths(): array
     {
         $paths = [];
+        $live = array_map(fn (CaseStatus $s) => $s->value, self::LIVE_CASE_STATUSES);
 
         AbuseReport::query()
-            ->whereNotNull('attachment_paths')
-            ->whereHas('case', fn ($q) => $q->whereIn('status', array_map(
-                fn (CaseStatus $s) => $s->value,
-                self::LIVE_CASE_STATUSES,
-            )))
-            ->select(['id', 'attachment_paths'])
+            ->whereHas('case', fn ($q) => $q->whereIn('status', $live))
+            ->where(fn ($q) => $q->whereNotNull('attachment_paths')->orWhereNotNull('metadata'))
+            ->select(['id', 'attachment_paths', 'metadata'])
             ->chunkById(1000, function ($reports) use (&$paths) {
                 foreach ($reports as $report) {
                     foreach (($report->attachment_paths ?? []) as $path) {
-                        if (is_string($path) && trim($path) !== '') {
-                            $paths[$path] = true;
+                        $this->rememberPath($paths, $path);
+                    }
+
+                    $followups = $report->metadata['followups'] ?? [];
+                    if (is_array($followups)) {
+                        foreach ($followups as $followup) {
+                            $this->rememberPath($paths, is_array($followup) ? ($followup['attachment'] ?? null) : null);
                         }
                     }
                 }
             });
 
+        CaseAction::query()
+            ->whereHas('abuseCase', fn ($q) => $q->whereIn('status', $live))
+            ->whereNotNull('payload')
+            ->select(['id', 'payload'])
+            ->chunkById(1000, function ($actions) use (&$paths) {
+                foreach ($actions as $action) {
+                    $payload = $action->payload;
+                    $this->rememberPath($paths, is_array($payload) ? ($payload['attachment'] ?? null) : null);
+                }
+            });
+
         return $paths;
+    }
+
+    /** Record a path in the protected set when it is a usable string. */
+    private function rememberPath(array &$paths, mixed $path): void
+    {
+        if (is_string($path) && trim($path) !== '') {
+            $paths[$path] = true;
+        }
     }
 
     /** Parse the Y/m tail of an archive directory; null when it doesn't match. */
